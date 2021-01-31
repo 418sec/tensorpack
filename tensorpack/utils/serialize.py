@@ -2,11 +2,35 @@
 # File: serialize.py
 
 import os
-
+import io
+import builtins
 import pickle
 from multiprocessing.reduction import ForkingPickler
 import msgpack
 import msgpack_numpy
+
+safe_builtins = {
+    'range',
+    'complex',
+    'set',
+    'frozenset',
+    'slice',
+}
+
+class RestrictedUnpickler(pickle.Unpickler):
+
+    def find_class(self, module, name):
+        """Only allow safe classes from builtins"""
+        if module == "builtins" and name in safe_builtins:
+            return getattr(builtins, name)
+        """Forbid everything else"""
+        raise pickle.UnpicklingError("global '%s.%s' is forbidden" %
+                                     (module, name))
+
+
+def restricted_loads(s):
+    """Helper function analogous to pickle.loads()"""
+    return RestrictedUnpickler(io.BytesIO(s)).load()
 
 msgpack_numpy.patch()
 assert msgpack.version >= (0, 5, 2)
@@ -90,7 +114,7 @@ class PickleSerializer(object):
         Args:
             bytes
         """
-        return pickle.loads(buf)
+        return pickle.loads(restricted_loads(buf))
 
 
 # Define the default serializer to be used that dumps data to bytes
